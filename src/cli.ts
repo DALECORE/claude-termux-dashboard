@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 import 'dotenv/config';
-import { createInterface } from 'readline';
 import chalk from 'chalk';
-import { Dashboard } from './dashboard.js';
-import { TermuxController } from './termux/controller.js';
-import { GitHubController } from './github/controller.js';
-import { ClaudeController } from './ai/claude.js';
-import { Config } from './config.js';
+import { createInterface } from 'readline';
+import { GatewayClient } from './gateway.js';
+import { History } from './history.js';
+import { config, validateConfig } from './config.js';
+import { createSpinner } from 'ora';
 
 const readline = createInterface({
   input: process.stdin,
   output: process.stdout,
+  historySize: 50,
 });
 
 function prompt(question: string): Promise<string> {
@@ -22,121 +22,112 @@ function prompt(question: string): Promise<string> {
 }
 
 async function main() {
-  console.clear();
-  console.log(chalk.green.bold('\n🚀 DALECORE Terminal Dashboard\n'));
-  console.log(chalk.gray('Termux • Claude • GitHub • Local Services\n'));
+  if (!validateConfig()) {
+    process.exit(1);
+  }
 
-  const config = new Config();
-  const dashboard = new Dashboard();
-  const termux = new TermuxController();
-  const github = new GitHubController();
-  const claude = new ClaudeController();
+  console.clear();
+  console.log(chalk.green.bold('\n🚀 Anthropic Gateway CLI\n'));
+  console.log(chalk.gray(`Gateway: ${config.gatewayUrl}\n`));
+
+  const gateway = new GatewayClient();
+  const history = new History(config.historyFile, config.maxHistory);
+
+  // Load history
+  await history.load();
+
+  // Check gateway health
+  const spinner = createSpinner('Checking gateway...').start();
+  const isHealthy = await gateway.healthCheck();
+  if (isHealthy) {
+    spinner.succeed(chalk.green('Gateway is online'));
+  } else {
+    spinner.warn(chalk.yellow('Gateway might be offline'));
+  }
+
+  console.log(
+    chalk.gray('\nType "help" for commands, "exit" to quit, "history" to see prompts\n')
+  );
 
   let running = true;
 
   while (running) {
-    console.log(chalk.cyan.bold('\n=== Main Menu ===\n'));
-    console.log('1. Dashboard (overview)');
-    console.log('2. Termux controls');
-    console.log('3. GitHub auth');
-    console.log('4. Claude chat');
-    console.log('5. System health');
-    console.log('6. Local services');
-    console.log('7. Settings');
-    console.log('8. Exit\n');
+    const input = await prompt(chalk.cyan('You> '));
 
-    const choice = await prompt(chalk.yellow('Select option: '));
+    const trimmedInput = input.trim();
 
-    switch (choice.trim()) {
-      case '1':
-        await dashboard.show();
-        break;
-      case '2':
-        await termux.menu();
-        break;
-      case '3':
-        await github.menu();
-        break;
-      case '4':
-        await claude.menu();
-        break;
-      case '5':
-        await showSystemHealth();
-        break;
-      case '6':
-        await showLocalServices(config);
-        break;
-      case '7':
-        await showSettings(config);
-        break;
-      case '8':
-        running = false;
-        console.log(chalk.green('\n👋 Goodbye!\n'));
-        break;
-      default:
-        console.log(chalk.red('Invalid option. Try again.'));
+    if (!trimmedInput) continue;
+
+    if (trimmedInput.toLowerCase() === 'exit') {
+      running = false;
+      console.log(chalk.green('\n👋 Goodbye!\n'));
+      continue;
+    }
+
+    if (trimmedInput.toLowerCase() === 'help') {
+      showHelp();
+      continue;
+    }
+
+    if (trimmedInput.toLowerCase() === 'history') {
+      showHistory(history);
+      continue;
+    }
+
+    if (trimmedInput.toLowerCase() === 'clear') {
+      console.clear();
+      continue;
+    }
+
+    // Send to gateway
+    const spin = createSpinner('Waiting for response...').start();
+
+    try {
+      const response = await gateway.sendPrompt({
+        prompt: trimmedInput,
+      });
+
+      spin.succeed();
+      console.log(chalk.green('\nClaude:'));
+      console.log(chalk.white(response.message));
+
+      if (response.usage) {
+        console.log(
+          chalk.gray(
+            `\n📊 Tokens: input=${response.usage.input_tokens}, output=${response.usage.output_tokens}`
+          )
+        );
+      }
+
+      console.log('');
+
+      // Save to history
+      await history.add(trimmedInput);
+    } catch (error: any) {
+      spin.fail(chalk.red('Error'));
+      console.log(chalk.red(`Error: ${error.message}\n`));
     }
   }
 
   readline.close();
 }
 
-async function showSystemHealth() {
-  console.clear();
-  console.log(chalk.cyan.bold('\n=== System Health ===\n'));
-
-  const osUtils = await import('os-utils');
-
-  osUtils.cpuUsage((v: number) => {
-    console.log(`CPU Usage: ${(v * 100).toFixed(1)}%`);
-  });
-
-  console.log(`Memory: ${osUtils.totalmem() / 1024 / 1024 / 1024}GB total`);
-  console.log(`Free RAM: ${osUtils.freemem() / 1024 / 1024}MB`);
-
-  const { exec } = await import('child_process');
-  exec('uname -a', (err, stdout) => {
-    if (!err) console.log(`System: ${stdout}`);
-  });
-
-  await prompt(chalk.gray('Press Enter to continue...'));
+function showHelp(): void {
+  console.log(chalk.cyan.bold('\nAvailable Commands:\n'));
+  console.log('  help       - Show this help message');
+  console.log('  history    - Show last 10 prompts');
+  console.log('  clear      - Clear screen');
+  console.log('  exit       - Exit the CLI\n');
+  console.log(chalk.gray('Just type your prompt to send it to Claude via the gateway.\n'));
 }
 
-async function showLocalServices(config: Config) {
-  console.clear();
-  console.log(chalk.cyan.bold('\n=== Local Services Health ===\n'));
-
-  const services = [
-    { name: 'llama.cpp', url: config.llamaUrl },
-    { name: 'Payment API', url: config.paymentUrl },
-  ];
-
-  for (const service of services) {
-    try {
-      const response = await fetch(`${service.url}/health`, {
-        timeout: 5000,
-      } as RequestInit);
-      console.log(`${service.name}: ${response.ok ? chalk.green('✓ OK') : chalk.red('✗ Failed')}`);
-    } catch (e) {
-      console.log(`${service.name}: ${chalk.red('✗ Offline')}`);
-    }
-  }
-
-  await prompt(chalk.gray('Press Enter to continue...'));
-}
-
-async function showSettings(config: Config) {
-  console.clear();
-  console.log(chalk.cyan.bold('\n=== Settings ===\n'));
-  console.log(`Termux mode: ${config.termuxMode ? chalk.green('ON') : chalk.red('OFF')}`);
-  console.log(`Kali available: ${config.kaliAvailable ? chalk.green('YES') : chalk.red('NO')}`);
-  console.log(`llama.cpp: ${config.llamaUrl}`);
-  console.log(`Payment API: ${config.paymentUrl}\n`);
-
-  const choice = await prompt(chalk.yellow('Edit settings? (y/n): '));
-  if (choice.toLowerCase() === 'y') {
-    console.log('Settings editor coming soon...');
-  }
+function showHistory(history: History): void {
+  console.log(chalk.cyan.bold('\nRecent Prompts:\n'));
+  const items = history.getLast(10);
+  items.forEach((item, i) => {
+    console.log(`  ${i + 1}. ${chalk.gray(item)}`);
+  });
+  console.log('');
 }
 
 main().catch(console.error);

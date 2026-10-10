@@ -1,191 +1,292 @@
-# Claude Termux Dashboard
+# Anthropic Gateway CLI
 
-**Full-featured terminal CLI** combining Termux environment control, Claude AI chat, and GitHub authentication with local service health monitoring.
+A simple terminal CLI that sends prompts to **your custom Anthropic gateway service** instead of directly calling the Anthropic API.
 
-## Features
+## Why a Gateway?
 
-### 🖥️ Dashboard
-- Real-time system overview
-- Service health checks (llama.cpp, Payment API)
-- Component status monitoring
-- Quick action shortcuts
+- **Centralized control** - manage all API calls through your own service
+- **Logging & monitoring** - track usage and patterns
+- **Rate limiting** - enforce quotas per user/API key
+- **Cost control** - monitor and limit spending
+- **Caching** - avoid duplicate API calls
+- **Transformation** - modify requests/responses
+- **Authentication** - add your own auth layer
+- **Multi-model routing** - switch between Claude versions dynamically
 
-### 🔧 Termux Controls
-- Environment variable inspection
-- Custom command execution
-- Terminal shortcuts reference
-- Kali mode switching
-- Command history browsing
+## Quick Start
 
-### 🤖 Claude AI Chat
-- Conversational interface
-- Termux-aware system prompts
-- Session persistence
-- Multi-turn conversations
-- Context-aware responses
-
-### 🐙 GitHub Integration
-- OAuth authentication (Device Flow & PAT)
-- User profile viewing
-- Repository listing
-- Activity feed
-- Secure token handling
-
-### 🏥 System Health
-- CPU & Memory monitoring
-- Local service status
-- Service connectivity checks
-- Health indicators
-
-## Installation
+### 1. Install
 
 ```bash
-git clone https://github.com/DALECORE/claude-termux-dashboard.git
-cd claude-termux-dashboard
+git clone https://github.com/DALECORE/anthropic-gateway-cli.git
+cd anthropic-gateway-cli
 npm install
 ```
 
-## Configuration
+### 2. Configure
 
-1. Copy `.env.example` to `.env`:
-   ```bash
-   cp .env.example .env
-   ```
+```bash
+cp .env.example .env
+```
 
-2. Configure your API keys:
-   ```env
-   ANTHROPIC_API_KEY=sk-ant-...
-   GITHUB_TOKEN=ghp_...  # Optional
-   LLAMA_API_URL=http://localhost:8000
-   PAYMENT_API_URL=http://localhost:3001
-   ```
+Edit `.env`:
 
-## Usage
+```env
+GATEWAY_URL=http://localhost:3000          # Your gateway service URL
+GATEWAY_API_KEY=your-api-key               # Optional: API key for gateway
+GATEWAY_TOKEN=your-bearer-token            # Optional: Bearer token for gateway
+CLI_HISTORY_FILE=./.cli-history            # Where to store prompt history
+CLI_MAX_HISTORY=100                        # Max prompts to keep
+CLI_TIMEOUT_MS=30000                       # Request timeout
+```
 
-### Development
+### 3. Start Your Gateway Service
+
+Before running the CLI, your gateway service must be running on the configured URL.
+
+**Example Node.js gateway:**
+
+```bash
+# See gateway-server.ts (separate project)
+node gateway-server.js
+```
+
+### 4. Run the CLI
+
 ```bash
 npm run dev
 ```
 
-### Build
-```bash
-npm run build
-```
-
-### Run
-```bash
-npm start
-```
-
-## Main Menu
+## Usage
 
 ```
-1. Dashboard (overview)
-2. Termux controls
-3. GitHub auth
-4. Claude chat
-5. System health
-6. Local services
-7. Settings
-8. Exit
+🚀 Anthropic Gateway CLI
+
+Gateway: http://localhost:3000
+
+Type "help" for commands, "exit" to quit, "history" to see prompts
+
+You> What is Rust?
+Claude:
+Rust is a systems programming language...
+
+📊 Tokens: input=4, output=150
+
+You> help
+Available Commands:
+
+  help       - Show this help message
+  history    - Show last 10 prompts
+  clear      - Clear screen
+  exit       - Exit the CLI
+
+You> exit
+👋 Goodbye!
 ```
 
-## Claude Chat Examples
+## Commands
 
-```
-You: How do I check disk space in Termux?
-Claude: In Termux, use: df -h
-        This shows all mounted filesystems with free space.
-
-You: What are my GitHub repositories?
-Claude: [Lists your 10 most recent repos]
-
-You: Summarize system health
-Claude: [Analyzes CPU, memory, services]
-```
+| Command | Description |
+| --- | --- |
+| `help` | Show available commands |
+| `history` | Display last 10 prompts |
+| `clear` | Clear terminal screen |
+| `exit` | Exit the CLI |
+| Any text | Send as prompt to gateway |
 
 ## Architecture
 
 ```
-src/
-├── cli.ts                 # Main entry point
-├── config.ts              # Configuration loader
-├── dashboard.ts           # Dashboard UI
-├── termux/
-│   └── controller.ts      # Termux controls
-├── github/
-│   └── controller.ts      # GitHub auth & API
-└── ai/
-    └── claude.ts          # Claude chat integration
+CLI (src/cli.ts)
+  ↓
+  Gateway Client (src/gateway.ts)
+    ↓
+    POST {GATEWAY_URL}/chat
+      {
+        "prompt": "user input",
+        "model": "claude-3-5-sonnet-20241022",
+        "max_tokens": 1024
+      }
+    ↓
+  Your Gateway Service
+    ↓
+    Anthropic API
+      ↓
+    Claude Response
 ```
 
-## Local Services
+## Gateway Endpoint
 
-### llama.cpp Server
+Your gateway service must implement:
+
+### POST /chat
+
+**Request:**
+
+```json
+{
+  "prompt": "Your prompt here",
+  "model": "claude-3-5-sonnet-20241022",
+  "max_tokens": 1024,
+  "system": "Optional system prompt",
+  "temperature": 0.7
+}
+```
+
+**Response:**
+
+```json
+{
+  "message": "Claude's response here",
+  "model": "claude-3-5-sonnet-20241022",
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 150
+  },
+  "timestamp": "2026-10-10T12:34:56Z"
+}
+```
+
+### GET /health
+
+**Response:**
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-10-10T12:34:56Z"
+}
+```
+
+## Example Gateway Server (Node.js + Express)
+
+Create `gateway-server.ts`:
+
+```typescript
+import express from 'express';
+import Anthropic from '@anthropic-ai/sdk';
+import 'dotenv/config';
+
+const app = express();
+app.use(express.json());
+
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+app.post('/chat', async (req, res) => {
+  try {
+    const { prompt, model = 'claude-3-5-sonnet-20241022', max_tokens = 1024 } = req.body;
+
+    const response = await client.messages.create({
+      model,
+      max_tokens,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    });
+
+    const message =
+      response.content[0].type === 'text'
+        ? response.content[0].text
+        : 'Unable to process response';
+
+    res.json({
+      message,
+      model,
+      usage: {
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.listen(3000, () => {
+  console.log('Gateway running on http://localhost:3000');
+});
+```
+
+## Development
+
 ```bash
-# Start on port 8000
-llama-server -m model.gguf -ngl 33
+# Run in development
+npm run dev
+
+# Build
+npm run build
+
+# Run compiled version
+npm start
 ```
-
-### Payment API
-```bash
-# Start on port 3001
-node payment-api.js
-```
-
-## API Integration
-
-### Anthropic Claude
-- Model: `claude-3-5-sonnet-20241022`
-- Context-aware system prompts
-- Conversation history tracking
-
-### GitHub
-- Uses `@octokit/rest`
-- Supports Device Flow and PAT authentication
-- Real-time user & repo data
-
-### Local Services
-- Health check endpoints
-- Service status monitoring
-- Timeout-aware requests
 
 ## Security
 
 - ✅ API keys stored in `.env` (Git-ignored)
-- ✅ GitHub tokens kept server-side
-- ✅ No credential logging
-- ✅ Secure session handling
-- ✅ HTTPS recommended for production
+- ✅ Configurable authentication headers
+- ✅ HTTPS support (configure gateway URL)
+- ✅ Timeout protection
+- ✅ Error handling
+
+## Features
+
+- ✅ Interactive terminal chat
+- ✅ Command history (persistent)
+- ✅ Token usage display
+- ✅ Health checks
+- ✅ Timeout handling
+- ✅ Error messages
+- ✅ Gateway agnostic
+
+## Roadmap
+
+- [ ] Multi-turn conversation state
+- [ ] System prompt customization
+- [ ] Model selection from CLI
+- [ ] Streaming responses
+- [ ] Export conversations
+- [ ] Configuration wizard
+- [ ] Web UI companion
 
 ## Troubleshooting
 
-### "ANTHROPIC_API_KEY not set"
+### "Gateway might be offline"
+
+Check that your gateway service is running:
+
 ```bash
-echo "ANTHROPIC_API_KEY=your-key" >> .env
+curl http://localhost:3000/health
 ```
 
-### "Service offline"
-Check that llama.cpp and Payment API are running on configured ports.
+### "Request timeout"
 
-### "GitHub authentication failed"
-- Use Device Flow for app authorization
-- Or provide valid PAT token
+Increase timeout in `.env`:
 
-## Development Roadmap
+```env
+CLI_TIMEOUT_MS=60000
+```
 
-- [ ] Database persistence (SQLite)
-- [ ] Command history search
-- [ ] Custom shortcuts configuration
-- [ ] Plugin system
-- [ ] Web UI companion
-- [ ] Mobile app wrapper
-- [ ] Advanced analytics
+### "Unauthorized"
+
+Verify API key/token in `.env`:
+
+```env
+GATEWAY_API_KEY=your-valid-key
+GATEWAY_TOKEN=your-valid-token
+```
 
 ## License
 
 Open source - DALECORE
-
-## Contributing
-
-Pull requests welcome! Please follow TypeScript best practices and add tests for new features.

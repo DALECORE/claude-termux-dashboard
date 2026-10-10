@@ -1,12 +1,9 @@
 {
-  "name": "claude-termux-dashboard",
+  "name": "anthropic-gateway-cli",
   "version": "1.0.0",
-  "description": "Full-featured terminal CLI combining Termux, Claude AI, and GitHub auth",
+  "description": "Terminal CLI that calls your custom Anthropic gateway service",
   "private": true,
   "type": "module",
-  "bin": {
-    "dashboard": "dist/cli.js"
-  },
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc --pretty false",
@@ -14,20 +11,12 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "@octokit/rest": "^21.0.0",
     "chalk": "^5.4.1",
-    "cli-table3": "^0.6.3",
     "dotenv": "^16.4.5",
-    "inquirer": "^10.1.4",
-    "ora": "^8.0.1",
-    "os-utils": "^0.0.14",
-    "sqlite3": "^5.1.7"
+    "ora": "^8.0.1"
   },
   "devDependencies": {
-    "@types/inquirer": "^9.0.7",
     "@types/node": "^22.10.1",
-    "@types/os-utils": "^0.0.4",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

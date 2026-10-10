@@ -1,27 +1,18 @@
-export class Config {
-  public apiKey: string;
-  public githubToken: string | null;
-  public llamaUrl: string;
-  public paymentUrl: string;
-  public termuxMode: boolean;
-  public kaliAvailable: boolean;
-  public refreshInterval: number;
+import 'dotenv/config';
 
-  constructor() {
-    this.apiKey = process.env.ANTHROPIC_API_KEY || '';
-    this.githubToken = process.env.GITHUB_TOKEN || null;
-    this.llamaUrl = process.env.LLAMA_API_URL || 'http://localhost:8000';
-    this.paymentUrl = process.env.PAYMENT_API_URL || 'http://localhost:3001';
-    this.termuxMode = process.env.TERMUX_MODE !== 'false';
-    this.kaliAvailable = process.env.KALI_AVAILABLE === 'true';
-    this.refreshInterval = parseInt(process.env.DASHBOARD_REFRESH_INTERVAL || '5000');
-  }
+export const config = {
+  gatewayUrl: process.env.GATEWAY_URL || 'http://localhost:3000',
+  gatewayApiKey: process.env.GATEWAY_API_KEY || '',
+  gatewayToken: process.env.GATEWAY_TOKEN || '',
+  historyFile: process.env.CLI_HISTORY_FILE || './.cli-history',
+  maxHistory: parseInt(process.env.CLI_MAX_HISTORY || '100'),
+  timeoutMs: parseInt(process.env.CLI_TIMEOUT_MS || '30000'),
+};
 
-  validate(): boolean {
-    if (!this.apiKey) {
-      console.error('Error: ANTHROPIC_API_KEY not set');
-      return false;
-    }
-    return true;
+export function validateConfig(): boolean {
+  if (!config.gatewayUrl) {
+    console.error('Error: GATEWAY_URL not configured');
+    return false;
   }
+  return true;
 }
